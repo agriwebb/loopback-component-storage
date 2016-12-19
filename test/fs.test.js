@@ -110,8 +110,23 @@ describe('FileSystem based storage provider', function() {
       writer.on('error', done);
     });
 
-    it('should fail to upload a file with invalid characters', function(done) {
+    it('should upload and create intermediate directories for file', function(done) {
       var writer = client.upload({container: 'c1', remote: 'a/f1.txt'});
+      fs.createReadStream(path.join(__dirname, 'files/f1.txt')).pipe(writer);
+      var cb = done;
+      var clearCb = function() {};
+      writer.on('finish', function() {
+        cb();
+        cb = clearCb;
+      });
+      writer.on('error', function(e) {
+        cb(e);
+        cb = clearCb;
+      });
+    });
+
+    it('should not upload a file with directory traversal characters', function(done) {
+      var writer = client.upload({container: 'c1', remote: 'a/../f1.txt'});
       fs.createReadStream(path.join(__dirname, 'files/f1.txt')).pipe(writer);
       var cb = done;
       var clearCb = function() {};
@@ -135,8 +150,23 @@ describe('FileSystem based storage provider', function() {
       reader.on('error', done);
     });
 
-    it('should fail to download a file with invalid characters', function(done) {
+    it('should download a file with nested paths', function(done) {
       var reader = client.download({container: 'c1', remote: 'a/f1.txt'});
+      reader.pipe(fs.createWriteStream(path.join(__dirname, 'files/a-f1_downloaded.txt')));
+      var cb = done;
+      var clearCb = function() {};
+      reader.on('end', function() {
+        cb();
+        cb = clearCb;
+      });
+      reader.on('error', function(e) {
+        cb(e);
+        cb = clearCb;
+      });
+    });
+
+    it('should not download a file with directory traversal', function(done) {
+      var reader = client.download({container: 'c1', remote: 'a/../f1.txt'});
       reader.pipe(fs.createWriteStream(path.join(__dirname, 'files/a-f1_downloaded.txt')));
       var cb = done;
       var clearCb = function() {};
@@ -153,7 +183,7 @@ describe('FileSystem based storage provider', function() {
     it('should get files for a container', function(done) {
       client.getFiles('c1', function(err, files) {
         assert(!err);
-        assert.equal(1, files.length);
+        assert.equal(2, files.length);
         done(err, files);
       });
     });
@@ -167,10 +197,41 @@ describe('FileSystem based storage provider', function() {
       });
     });
 
+    it('should get a nested file', function(done) {
+      client.getFile('c1', 'a/f1.txt', function(err, f) {
+        assert(!err);
+        assert.ok(f);
+        verifyMetadata(f, 'a/f1.txt');
+        done(err, f);
+      });
+    });
+
+    it('should not get a maliciously nested file', function(done) {
+      client.getFile('c1', 'a/../f1.txt', function(err, f) {
+        assert(err);
+        assert(!f);
+        done(null, f);
+      });
+    });
+
     it('should remove a file', function(done) {
       client.removeFile('c1', 'f1.txt', function(err) {
         assert(!err);
         done(err);
+      });
+    });
+
+    it('should remove a nested file', function(done) {
+      client.removeFile('c1', 'a/f1.txt', function(err) {
+        assert(!err);
+        done(err);
+      });
+    });
+
+    it('should not remove a maliciously nested file', function(done) {
+      client.getFile('c1', 'a/../f1.txt', function(err) {
+        assert(err);
+        done();
       });
     });
 
